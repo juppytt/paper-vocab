@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-vocab"
+version = "0.1.0"
+description = "rg-based vocabulary lookup over paper text corpora."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+paper-vocab = "paper_vocab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
