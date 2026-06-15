@@ -4,9 +4,8 @@ Vocabulary lookup over paper text corpora. The immediate goal is to check
 whether a word or phrase is common in prior security papers, and to inspect the
 sentences where it appears.
 
-This repo currently uses an `rg`-based workflow instead of a database. Raw text
-files are the corpus. The CLI scans those files, counts expression frequency,
-and prints matching sentence examples.
+Raw text files are the canonical corpus. The CLI can scan those files directly
+or build a SQLite/FTS vocabulary DB for repeated lookups.
 
 ## Corpus Layout
 
@@ -66,6 +65,29 @@ ln -sfn ../sample_2013/raw/text data/corpus/text
 PDFs are not needed for lookup after text extraction. Use `--delete-pdfs` for a
 text-only local corpus; omit it when the raw PDFs should stay available for
 debugging or re-extraction.
+
+## Vocab DB
+
+Build a SQLite/FTS DB from extracted text:
+
+```bash
+paper-vocab build-db \
+  --corpus-dir data/corpus/text \
+  --manifest-db ../paper-collect/data/paper_collect.sqlite \
+  --db data/paper_vocab.sqlite \
+  --year-from 2013 \
+  --year-to 2022 \
+  --force
+```
+
+Query the DB:
+
+```bash
+paper-vocab lookup-db "in the wild" \
+  --db data/paper_vocab.sqlite \
+  --year-from 2013 \
+  --year-to 2022
+```
 
 ## Lookup
 
@@ -172,6 +194,5 @@ per_million_tokens: 153.368
 
 ## Next Step
 
-This is intentionally not a database yet. The text corpus should remain the
-canonical source; a SQLite/FTS index can be built later when repeated lookups
-need to be faster or richer.
+The next improvement is richer DB metadata and cached sentence spans, so phrase
+lookups do not need to rescan matching document text for example sentences.

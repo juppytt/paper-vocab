@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "paper-vocab"
 version = "0.1.0"
-description = "rg-based vocabulary lookup over paper text corpora."
+description = "Vocabulary lookup and SQLite indexing over paper text corpora."
 requires-python = ">=3.10"
 dependencies = []
 
