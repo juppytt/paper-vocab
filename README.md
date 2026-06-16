@@ -8,29 +8,63 @@ directly, or build a SQLite/FTS DB for faster repeated lookups.
 
 ## Installation
 
-Clone [`paper-collect`](https://github.com/juppytt/paper-collect) and
-[`paper-vocab`](https://github.com/juppytt/paper-vocab) into the same parent
-directory, then install both packages in editable mode:
+Install `paper-vocab` from <https://github.com/juppytt/paper-vocab>:
 
 ```bash
-git clone https://github.com/juppytt/paper-collect.git
 git clone https://github.com/juppytt/paper-vocab.git
 cd paper-vocab
-```
-
-```bash
-python3 -m pip install -e ../paper-collect
 python3 -m pip install -e .
 ```
 
-After installation, use the console commands directly:
+Or install directly from GitHub:
 
 ```bash
-paper-collect --help
+python3 -m pip install git+https://github.com/juppytt/paper-vocab.git
+```
+
+After installation, use the console command directly:
+
+```bash
 paper-vocab --help
 ```
 
-## Text Input
+## Use an Existing DB File
+
+If you already have `paper_vocab.sqlite`, `paper-collect`, PDFs, and extracted
+`.txt` files are not required for lookup. Point `lookup-db` at the DB file:
+
+```bash
+paper-vocab lookup-db "in the wild" \
+  --db <path-to-paper_vocab.sqlite> \
+  --year-from 2013 \
+  --year-to 2022
+```
+
+Useful filters:
+
+```bash
+paper-vocab lookup-db "side channel" \
+  --db <path-to-paper_vocab.sqlite> \
+  --venues sp ccs
+
+paper-vocab lookup-db "permission engine" \
+  --db <path-to-paper_vocab.sqlite> \
+  --year-from 2018 \
+  --year-to 2022
+```
+
+## Build a DB From Text Files
+
+Use this section only when creating a new `paper_vocab.sqlite`.
+
+To collect papers and extract text, install
+[`paper-collect`](https://github.com/juppytt/paper-collect) alongside this repo:
+
+```bash
+# From the parent directory that contains paper-vocab/
+git clone https://github.com/juppytt/paper-collect.git
+python3 -m pip install -e paper-collect
+```
 
 Arrange extracted text files by venue and year:
 
