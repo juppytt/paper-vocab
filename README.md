@@ -89,6 +89,19 @@ paper-vocab lookup-db "in the wild" \
   --year-to 2022
 ```
 
+`lookup-db` uses the SQLite FTS index to find candidate documents before
+rescanning those documents for sentence examples and exact occurrence counts.
+FTS is token-based, so use `--legacy` to compare against the old full-document
+substring scan or to preserve arbitrary substring matches inside larger words:
+
+```bash
+paper-vocab lookup-db "in the wild" \
+  --db data/paper_vocab.sqlite \
+  --year-from 2013 \
+  --year-to 2022 \
+  --legacy
+```
+
 ## Lookup
 
 ```bash

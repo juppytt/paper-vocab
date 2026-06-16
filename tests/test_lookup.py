@@ -86,6 +86,64 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(lookup_result.sentence_count, 2)
         self.assertEqual(lookup_result.occurrence_count, 2)
 
+    def test_db_lookup_fts_matches_legacy_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "text"
+            make_text(corpus / "ccs" / "2013" / "a.txt", "Side channel attacks appear here.")
+            make_text(corpus / "ccs" / "2013" / "b.txt", "This paper studies cryptographic protocols.")
+            db_path = root / "paper_vocab.sqlite"
+
+            build_vocab_db(db_path=db_path, corpus_dir=corpus)
+            fts_result = lookup_db_expression("side channel", db_path=db_path, year=2013, max_examples=10)
+            legacy_result = lookup_db_expression(
+                "side channel",
+                db_path=db_path,
+                year=2013,
+                max_examples=10,
+                use_fts=False,
+            )
+
+        self.assertEqual(fts_result.to_dict(), legacy_result.to_dict())
+        self.assertEqual(fts_result.files_scanned, 2)
+        self.assertEqual(fts_result.files_matched, 1)
+
+    def test_db_lookup_limit_applies_before_fts_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "text"
+            make_text(corpus / "ccs" / "2013" / "a.txt", "This paper studies cryptographic protocols.")
+            make_text(corpus / "ccs" / "2013" / "z.txt", "Side channel attacks appear here.")
+            db_path = root / "paper_vocab.sqlite"
+
+            build_vocab_db(db_path=db_path, corpus_dir=corpus)
+            result = lookup_db_expression("side channel", db_path=db_path, year=2013, limit_files=1)
+
+        self.assertEqual(result.files_scanned, 1)
+        self.assertEqual(result.files_matched, 0)
+        self.assertEqual(result.occurrence_count, 0)
+
+    def test_db_lookup_fts_keeps_legacy_final_token_prefix_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "text"
+            make_text(corpus / "ccs" / "2013" / "a.txt", "The value appears in the wildcard table.")
+            make_text(corpus / "ccs" / "2013" / "b.txt", "This paper studies cryptographic protocols.")
+            db_path = root / "paper_vocab.sqlite"
+
+            build_vocab_db(db_path=db_path, corpus_dir=corpus)
+            fts_result = lookup_db_expression("in the wild", db_path=db_path, year=2013, max_examples=10)
+            legacy_result = lookup_db_expression(
+                "in the wild",
+                db_path=db_path,
+                year=2013,
+                max_examples=10,
+                use_fts=False,
+            )
+
+        self.assertEqual(fts_result.to_dict(), legacy_result.to_dict())
+        self.assertEqual(fts_result.files_matched, 1)
+
 
 def make_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

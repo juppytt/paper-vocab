@@ -171,11 +171,12 @@ def lookup_db_expression(
     limit_files: int | None = None,
     max_examples: int = 20,
     ignore_case: bool = True,
+    use_fts: bool = True,
 ) -> LookupResult:
     pattern = expression_pattern(expression, ignore_case=ignore_case)
 
     with closing(sqlite3.connect(db_path)) as conn:
-        rows = select_documents(
+        files_scanned, token_count = select_document_stats(
             conn,
             venues=venues,
             year=year,
@@ -183,15 +184,23 @@ def lookup_db_expression(
             year_to=year_to,
             limit_files=limit_files,
         )
+        candidate_ids = fts_candidate_ids(conn, expression) if use_fts else None
+        rows = select_documents(
+            conn,
+            venues=venues,
+            year=year,
+            year_from=year_from,
+            year_to=year_to,
+            limit_files=limit_files,
+            candidate_ids=candidate_ids,
+        )
 
     files_matched = 0
     sentence_count = 0
     occurrence_count = 0
-    token_count = 0
     examples: list[MatchExample] = []
 
     for row in rows:
-        token_count += row.token_count
         file_occurrences = 0
         for sentence in split_sentences(row.text):
             matches = pattern.findall(sentence)
@@ -216,7 +225,7 @@ def lookup_db_expression(
     per_million_tokens = (occurrence_count / token_count * 1_000_000) if token_count else 0.0
     return LookupResult(
         expression=expression,
-        files_scanned=len(rows),
+        files_scanned=files_scanned,
         files_matched=files_matched,
         sentence_count=sentence_count,
         occurrence_count=occurrence_count,
@@ -238,7 +247,80 @@ def select_documents(
     year_from: int | None,
     year_to: int | None,
     limit_files: int | None,
+    candidate_ids: set[int] | None = None,
 ) -> list[DocumentRow]:
+    if candidate_ids is not None and not candidate_ids:
+        return []
+
+    where, params = document_filter_sql(venues=venues, year=year, year_from=year_from, year_to=year_to)
+    limit = "limit :limit" if limit_files is not None else ""
+    if limit_files is not None:
+        params["limit"] = limit_files
+
+    candidate_where = ""
+    if candidate_ids is not None:
+        placeholders = []
+        for index, document_id in enumerate(sorted(candidate_ids)):
+            key = f"candidate_{index}"
+            placeholders.append(f":{key}")
+            params[key] = document_id
+        candidate_where = f"where id in ({', '.join(placeholders)})"
+
+    sql = f"""
+        with filtered as (
+            select id, path, venue, year, title, doi, token_count, text
+            from documents
+            {where}
+            order by path
+            {limit}
+        )
+        select id, path, venue, year, title, doi, token_count, text
+        from filtered
+        {candidate_where}
+        order by path
+    """
+
+    return [document_from_row(row) for row in conn.execute(sql, params).fetchall()]
+
+
+def select_document_stats(
+    conn: sqlite3.Connection,
+    *,
+    venues: set[str] | None,
+    year: int | None,
+    year_from: int | None,
+    year_to: int | None,
+    limit_files: int | None,
+) -> tuple[int, int]:
+    where, params = document_filter_sql(venues=venues, year=year, year_from=year_from, year_to=year_to)
+    limit = "limit :limit" if limit_files is not None else ""
+    if limit_files is not None:
+        params["limit"] = limit_files
+
+    row = conn.execute(
+        f"""
+        with filtered as (
+            select token_count
+            from documents
+            {where}
+            order by path
+            {limit}
+        )
+        select count(*), coalesce(sum(token_count), 0)
+        from filtered
+        """,
+        params,
+    ).fetchone()
+    return int(row[0]), int(row[1])
+
+
+def document_filter_sql(
+    *,
+    venues: set[str] | None,
+    year: int | None,
+    year_from: int | None,
+    year_to: int | None,
+) -> tuple[str, dict[str, object]]:
     clauses: list[str] = []
     params: dict[str, object] = {}
 
@@ -259,18 +341,8 @@ def select_documents(
         clauses.append("year <= :year_to")
         params["year_to"] = year_to
 
-    where = " where " + " and ".join(clauses) if clauses else ""
-    sql = f"""
-        select id, path, venue, year, title, doi, token_count, text
-        from documents
-        {where}
-        order by path
-    """
-    if limit_files is not None:
-        sql += " limit :limit"
-        params["limit"] = limit_files
-
-    return [document_from_row(row) for row in conn.execute(sql, params).fetchall()]
+    where = "where " + " and ".join(clauses) if clauses else ""
+    return where, params
 
 
 def fts_candidate_ids(conn: sqlite3.Connection, expression: str) -> set[int] | None:
@@ -285,7 +357,8 @@ def fts_candidate_ids(conn: sqlite3.Connection, expression: str) -> set[int] | N
 
 
 def fts_phrase_query(expression: str) -> str:
-    return f'"{expression.strip().replace(chr(34), chr(34) + chr(34))}"'
+    # Prefix the final token so FTS candidates do not drop legacy substring matches like "wildcard".
+    return f'"{expression.strip().replace(chr(34), chr(34) + chr(34))}"*'
 
 
 def document_from_row(row: sqlite3.Row | tuple[object, ...]) -> DocumentRow:
