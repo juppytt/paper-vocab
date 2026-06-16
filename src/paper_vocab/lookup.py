@@ -6,6 +6,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -259,23 +260,99 @@ def metadata_for_path(path: Path, metadata: dict[str, PaperMeta]) -> PaperMeta:
 
 
 def print_text_result(result: LookupResult) -> None:
-    print(f"expression: {result.expression}")
-    print(f"files_scanned: {result.files_scanned}")
-    print(f"files_matched: {result.files_matched}")
-    print(f"sentences: {result.sentence_count}")
-    print(f"occurrences: {result.occurrence_count}")
-    print(f"tokens: {result.token_count}")
-    print(f"per_million_tokens: {result.per_million_tokens:.3f}")
+    width = output_width()
+    print_section("Lookup", width=width)
+    print_key_values(
+        [
+            ("expression", result.expression),
+            ("files scanned", format_count(result.files_scanned)),
+            ("files matched", format_count(result.files_matched)),
+            ("sentences", format_count(result.sentence_count)),
+            ("occurrences", format_count(result.occurrence_count)),
+            ("tokens", format_count(result.token_count)),
+            ("per million", f"{result.per_million_tokens:,.3f}"),
+        ],
+        width=width,
+    )
     if result.examples:
         print()
-        print("examples:")
-        for example in result.examples:
-            label = example.path
-            if example.metadata.title:
-                bits = [bit for bit in (example.metadata.venue, str(example.metadata.year), example.metadata.title) if bit]
-                label = " | ".join(bits)
-            print(f"- {label}")
-            print(f"  {example.sentence}")
+        grouped_examples = group_examples_by_source(result.examples)
+        shown = len(result.examples)
+        print_section("Examples", width=width)
+        print(
+            f"showing {format_count(shown)} "
+            f"(total: {format_count(result.sentence_count)}, sources: {format_count(len(grouped_examples))})"
+        )
+        print()
+        for index, (source, examples) in enumerate(grouped_examples, start=1):
+            print_wrapped(f"{index}. ", source.heading, width=width)
+            for detail in source.details:
+                print_wrapped("   ", detail, width=width)
+            if source.details:
+                print()
+            for example in examples:
+                print_wrapped("   - ", example.sentence, width=width)
+                if example.count > 1:
+                    print(f"     matches: {format_count(example.count)}")
+            if index < len(grouped_examples):
+                print()
+
+
+@dataclass(frozen=True)
+class ExampleSource:
+    heading: str
+    details: tuple[str, ...] = ()
+
+
+def group_examples_by_source(examples: list[MatchExample]) -> list[tuple[ExampleSource, list[MatchExample]]]:
+    grouped: dict[ExampleSource, list[MatchExample]] = {}
+    for example in examples:
+        grouped.setdefault(example_source(example), []).append(example)
+    return list(grouped.items())
+
+
+def example_source(example: MatchExample) -> ExampleSource:
+    if example.metadata.title:
+        bits = [bit for bit in (example.metadata.venue, str(example.metadata.year)) if bit]
+        prefix = f"[{' '.join(bits)}] " if bits else ""
+        details = (f"doi: {example.metadata.doi}",) if example.metadata.doi else ()
+        return ExampleSource(f"{prefix}{example.metadata.title}", details=details)
+    return ExampleSource(example.path)
+
+
+def print_section(title: str, *, width: int) -> None:
+    print(title)
+    print("-" * min(len(title), width))
+
+
+def print_key_values(rows: list[tuple[str, str]], *, width: int) -> None:
+    label_width = max(len(label) for label, _ in rows)
+    value_indent = " " * (label_width + 2)
+    for label, value in rows:
+        print_wrapped(f"{label:<{label_width}}  ", value, width=width, subsequent_indent=value_indent)
+
+
+def format_count(value: int) -> str:
+    return f"{value:,}"
+
+
+def output_width() -> int:
+    return max(60, min(120, shutil.get_terminal_size(fallback=(100, 24)).columns))
+
+
+def print_wrapped(prefix: str, text: str, *, width: int, subsequent_indent: str | None = None) -> None:
+    if subsequent_indent is None:
+        subsequent_indent = " " * len(prefix)
+    print(
+        textwrap.fill(
+            text,
+            width=width,
+            initial_indent=prefix,
+            subsequent_indent=subsequent_indent,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

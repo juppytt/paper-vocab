@@ -9,7 +9,16 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from paper_vocab.lookup import lookup_expression, run, split_sentences, venue_year_from_path
+from paper_vocab.lookup import (
+    LookupResult,
+    MatchExample,
+    PaperMeta,
+    lookup_expression,
+    print_text_result,
+    run,
+    split_sentences,
+    venue_year_from_path,
+)
 from paper_vocab.vocab_db import build_vocab_db, lookup_db_expression
 
 
@@ -175,6 +184,50 @@ class LookupTests(unittest.TestCase):
         result = json.loads(output.getvalue())
         self.assertEqual(status, 0)
         self.assertEqual(result["files_matched"], 1)
+
+    def test_text_output_pretty_prints_examples(self) -> None:
+        result = LookupResult(
+            expression="in the wild",
+            files_scanned=1,
+            files_matched=1,
+            sentence_count=2,
+            occurrence_count=3,
+            token_count=20,
+            per_million_tokens=100000.0,
+            examples=[
+                MatchExample(
+                    path="/tmp/text/ccs/2013/example.txt",
+                    sentence=(
+                        "We evaluate this system in the wild because deployments in the wild "
+                        "exercise failure modes that short tests miss."
+                    ),
+                    count=2,
+                    metadata=PaperMeta(venue="ccs", year=2013, title="A Study of Deployed Systems"),
+                ),
+                MatchExample(
+                    path="/tmp/text/ccs/2013/example.txt",
+                    sentence="In the wild, the same assumptions often fail differently.",
+                    count=1,
+                    metadata=PaperMeta(venue="ccs", year=2013, title="A Study of Deployed Systems"),
+                ),
+            ],
+        )
+
+        output = io.StringIO()
+        with mock.patch("paper_vocab.lookup.output_width", return_value=72), redirect_stdout(output):
+            print_text_result(result)
+
+        text = output.getvalue()
+        self.assertIn("Lookup\n------\n", text)
+        self.assertIn("files scanned  1\n", text)
+        self.assertIn("per million    100,000.000\n", text)
+        self.assertIn("Examples\n--------\n", text)
+        self.assertIn("showing 2 (total: 2, sources: 1)\n", text)
+        self.assertEqual(text.count("1. [ccs 2013] A Study of Deployed Systems\n"), 1)
+        self.assertIn("   - We evaluate this system in the wild because deployments in the wild\n", text)
+        self.assertIn("     exercise failure modes that short tests miss.\n", text)
+        self.assertIn("     matches: 2\n", text)
+        self.assertIn("   - In the wild, the same assumptions often fail differently.\n", text)
 
 
 def make_text(path: Path, text: str) -> None:
