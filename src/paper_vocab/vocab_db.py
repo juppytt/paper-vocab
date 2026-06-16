@@ -171,7 +171,7 @@ def lookup_db_expression(
     limit_files: int | None = None,
     max_examples: int = 20,
     ignore_case: bool = True,
-    use_fts: bool = True,
+    substring_search: bool = False,
 ) -> LookupResult:
     pattern = expression_pattern(expression, ignore_case=ignore_case)
 
@@ -184,7 +184,7 @@ def lookup_db_expression(
             year_to=year_to,
             limit_files=limit_files,
         )
-        candidate_ids = fts_candidate_ids(conn, expression) if use_fts else None
+        candidate_ids = None if substring_search else fts_candidate_ids(conn, expression)
         rows = select_documents(
             conn,
             venues=venues,
@@ -357,7 +357,7 @@ def fts_candidate_ids(conn: sqlite3.Connection, expression: str) -> set[int] | N
 
 
 def fts_phrase_query(expression: str) -> str:
-    # Prefix the final token so FTS candidates do not drop legacy substring matches like "wildcard".
+    # Prefix the final token so FTS narrowing keeps matches like "wildcard".
     return f'"{expression.strip().replace(chr(34), chr(34) + chr(34))}"*'
 
 

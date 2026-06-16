@@ -317,7 +317,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     lookup_db.add_argument("--limit-files", type=int, default=None, help="Scan at most this many filtered DB documents.")
     lookup_db.add_argument("--examples", type=int, default=20, help="Maximum example sentences.")
     lookup_db.add_argument("--case-sensitive", action="store_true", help="Use case-sensitive matching.")
-    lookup_db.add_argument("--legacy", action="store_true", help="Scan all selected DB documents without FTS candidates.")
+    lookup_db.add_argument(
+        "--substring-search",
+        action="store_true",
+        help="Scan all filtered DB documents instead of narrowing the search with FTS.",
+    )
     lookup_db.add_argument("--json", action="store_true", help="Print JSON result.")
     return parser.parse_args(argv)
 
@@ -336,7 +340,6 @@ def run(argv: Sequence[str] | None = None) -> int:
             limit_files=args.limit_files,
             max_examples=args.examples,
             ignore_case=not args.case_sensitive,
-            use_fts=not args.legacy,
         )
         if args.json:
             print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
@@ -377,6 +380,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             limit_files=args.limit_files,
             max_examples=args.examples,
             ignore_case=not args.case_sensitive,
+            substring_search=args.substring_search,
         )
         if args.json:
             print(json.dumps(result.to_dict(), indent=2, sort_keys=True))

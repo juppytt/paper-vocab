@@ -1,16 +1,22 @@
 # Paper Vocab
 
-Vocabulary lookup over paper text corpora. The immediate goal is to check
-whether a word or phrase is common in prior security papers, and to inspect the
-sentences where it appears.
+Paper Vocab searches extracted paper text for words and phrases, reports how
+often they appear, and prints matching sentences.
 
-Raw text files are the canonical corpus. The CLI can scan those files directly
-or build a SQLite/FTS vocabulary DB for repeated lookups.
+Extracted `.txt` files are the source data. The CLI can search those files
+directly, or build a SQLite/FTS DB for faster repeated lookups.
 
 ## Installation
 
-Install `paper-collect` and `paper-vocab` in editable mode from adjacent local
-checkouts:
+Clone [`paper-collect`](https://github.com/juppytt/paper-collect) and
+[`paper-vocab`](https://github.com/juppytt/paper-vocab) into the same parent
+directory, then install both packages in editable mode:
+
+```bash
+git clone https://github.com/juppytt/paper-collect.git
+git clone https://github.com/juppytt/paper-vocab.git
+cd paper-vocab
+```
 
 ```bash
 python3 -m pip install -e ../paper-collect
@@ -24,7 +30,9 @@ paper-collect --help
 paper-vocab --help
 ```
 
-## Corpus Layout
+## Text Input
+
+Arrange extracted text files by venue and year:
 
 ```text
 data/corpus/text/
@@ -36,16 +44,8 @@ data/corpus/text/
       paper-b.txt
 ```
 
-The text files can be produced by `paper-collect`:
-
-`paper-collect` exports a console command through its `pyproject.toml`:
-
-```toml
-[project.scripts]
-paper-collect = "paper_collect.cli:main"
-```
-
-Use that command to download PDFs and extract text:
+`paper-vocab` reads `.txt` files. Use `paper-collect` to download PDFs and
+extract text:
 
 ```bash
 paper-collect download \
@@ -67,20 +67,21 @@ paper-collect extract-text \
   --delete-pdfs
 ```
 
-Then expose the extracted text as the lookup corpus:
+For these commands, create `data/corpus/text` as a symlink to the text directory
+produced by `paper-collect`:
 
 ```bash
 mkdir -p data/corpus
 ln -sfn ../sample_2013/raw/text data/corpus/text
 ```
 
-PDFs are not needed for lookup after text extraction. Use `--delete-pdfs` for a
-text-only local corpus; omit it when the raw PDFs should stay available for
+PDFs are not needed for lookup after text extraction. Use `--delete-pdfs` to
+keep only extracted text; omit it when the raw PDFs should stay available for
 debugging or re-extraction.
 
 ## Vocab DB
 
-Build a SQLite/FTS DB from extracted text:
+Build a SQLite/FTS DB for repeated searches:
 
 ```bash
 paper-vocab build-db \
@@ -92,7 +93,7 @@ paper-vocab build-db \
   --force
 ```
 
-Query the DB:
+Search the DB:
 
 ```bash
 paper-vocab lookup-db "in the wild" \
@@ -101,20 +102,20 @@ paper-vocab lookup-db "in the wild" \
   --year-to 2022
 ```
 
-`lookup-db` uses the SQLite FTS index to find candidate documents before
-rescanning those documents for sentence examples and exact occurrence counts.
-FTS is token-based, so use `--legacy` to compare against the old full-document
-substring scan or to preserve arbitrary substring matches inside larger words:
+`lookup-db` uses SQLite FTS to narrow the search first, then counts exact
+matches and prints matching sentences. FTS is token-based. Use
+`--substring-search` only when you want to scan every filtered DB document and
+allow matches inside larger words:
 
 ```bash
 paper-vocab lookup-db "in the wild" \
   --db data/paper_vocab.sqlite \
   --year-from 2013 \
   --year-to 2022 \
-  --legacy
+  --substring-search
 ```
 
-## Lookup
+## Direct Text Search
 
 ```bash
 paper-vocab lookup "in the wild" \
@@ -124,8 +125,8 @@ paper-vocab lookup "in the wild" \
   --examples 20
 ```
 
-Pass the `paper-collect` SQLite DB to show paper metadata next to sentence
-examples:
+Pass the `paper-collect` SQLite DB to show paper metadata next to matching
+sentences:
 
 ```bash
 paper-vocab lookup "in the wild" \
@@ -135,24 +136,37 @@ paper-vocab lookup "in the wild" \
   --limit-files 50
 ```
 
-The command reports:
+### CLI Arguments
 
-```text
-files_scanned
-files_matched
-sentences
-occurrences
-tokens
-per_million_tokens
-examples
-```
+Common lookup options:
 
-`--limit-files 50` means: after applying path filters such as `--year 2013` and
-`--venues security sp`, scan the first 50 sorted text files. It does not download
-anything and it is not random sampling.
+| Option | Meaning |
+| --- | --- |
+| `--corpus-dir data/corpus/text` | Text-file root for `lookup`. |
+| `--db data/paper_vocab.sqlite` | SQLite vocab DB for `lookup-db`. |
+| `--manifest-db path/to/paper_collect.sqlite` | Optional `paper-collect` DB used to show venue/year/title metadata in examples. |
+| `--venues security sp` | Include only those venues. |
+| `--year 2013` | Include only one publication year. |
+| `--year-from 2013 --year-to 2022` | Include a publication-year range. |
+| `--limit-files 50` | After applying venue/year filters, scan or index the first 50 sorted text files/documents. This is not random sampling. |
+| `--examples 20` | Print at most 20 matching sentence examples. |
+| `--case-sensitive` | Match exact letter case. |
+| `--json` | Print machine-readable JSON. |
+| `--substring-search` | For `lookup-db`, scan every filtered DB document instead of narrowing the search with FTS. |
 
-The example list is the matching sentence list. Increase `--examples` to print
-more matching sentences:
+### Output Fields
+
+| Field | Meaning |
+| --- | --- |
+| `files_scanned` | Number of text files or DB documents included after filters and `--limit-files`. |
+| `files_matched` | Number of scanned files/documents that contain at least one match. |
+| `sentences` | Number of matching sentences. |
+| `occurrences` | Total number of expression matches. A sentence can contain more than one occurrence. |
+| `tokens` | Total token count across scanned files/documents. |
+| `per_million_tokens` | `occurrences / tokens * 1,000,000`. |
+| `examples` | Matching sentence examples, up to the `--examples` limit. |
+
+Increase `--examples` to print more matching sentences:
 
 ```bash
 paper-vocab lookup "in the wild" \
@@ -163,7 +177,7 @@ paper-vocab lookup "in the wild" \
   --examples 50
 ```
 
-Use JSON output when another script or LLM tool should consume the result:
+Use JSON output when another script should read the result:
 
 ```bash
 paper-vocab lookup "side channel" \
@@ -173,9 +187,9 @@ paper-vocab lookup "side channel" \
   --json
 ```
 
-## Current Sample
+## Example Data
 
-The local sample used for initial testing is:
+The 2013 text data built with the commands above has this size:
 
 ```text
 year: 2013
@@ -185,7 +199,7 @@ pdf size: 111 MB
 text size: 3.8 MB
 ```
 
-Example lookup results over that sample:
+Example lookup results over that text data:
 
 ```text
 expression: in the wild
@@ -217,7 +231,7 @@ tokens: 619426
 per_million_tokens: 153.368
 ```
 
-## Next Step
+## TODO
 
-The next improvement is richer DB metadata and cached sentence spans, so phrase
-lookups do not need to rescan matching document text for example sentences.
+- [ ] Add richer DB metadata, e.g., authors, DOI, venue, year, title, and source PDF URL.
+- [ ] Add normalized lookup text for PDF line-break hyphenation.

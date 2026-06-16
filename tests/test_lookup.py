@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import io
+import json
 import tempfile
 import shutil
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from paper_vocab.lookup import lookup_expression, split_sentences, venue_year_from_path
+from paper_vocab.lookup import lookup_expression, run, split_sentences, venue_year_from_path
 from paper_vocab.vocab_db import build_vocab_db, lookup_db_expression
 
 
@@ -86,7 +89,7 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(lookup_result.sentence_count, 2)
         self.assertEqual(lookup_result.occurrence_count, 2)
 
-    def test_db_lookup_fts_matches_legacy_scan(self) -> None:
+    def test_db_lookup_fts_matches_substring_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             corpus = root / "text"
@@ -96,15 +99,15 @@ class LookupTests(unittest.TestCase):
 
             build_vocab_db(db_path=db_path, corpus_dir=corpus)
             fts_result = lookup_db_expression("side channel", db_path=db_path, year=2013, max_examples=10)
-            legacy_result = lookup_db_expression(
+            substring_result = lookup_db_expression(
                 "side channel",
                 db_path=db_path,
                 year=2013,
                 max_examples=10,
-                use_fts=False,
+                substring_search=True,
             )
 
-        self.assertEqual(fts_result.to_dict(), legacy_result.to_dict())
+        self.assertEqual(fts_result.to_dict(), substring_result.to_dict())
         self.assertEqual(fts_result.files_scanned, 2)
         self.assertEqual(fts_result.files_matched, 1)
 
@@ -123,7 +126,7 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(result.files_matched, 0)
         self.assertEqual(result.occurrence_count, 0)
 
-    def test_db_lookup_fts_keeps_legacy_final_token_prefix_matches(self) -> None:
+    def test_db_lookup_fts_keeps_final_token_prefix_matches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             corpus = root / "text"
@@ -133,16 +136,45 @@ class LookupTests(unittest.TestCase):
 
             build_vocab_db(db_path=db_path, corpus_dir=corpus)
             fts_result = lookup_db_expression("in the wild", db_path=db_path, year=2013, max_examples=10)
-            legacy_result = lookup_db_expression(
+            substring_result = lookup_db_expression(
                 "in the wild",
                 db_path=db_path,
                 year=2013,
                 max_examples=10,
-                use_fts=False,
+                substring_search=True,
             )
 
-        self.assertEqual(fts_result.to_dict(), legacy_result.to_dict())
+        self.assertEqual(fts_result.to_dict(), substring_result.to_dict())
         self.assertEqual(fts_result.files_matched, 1)
+
+    def test_lookup_db_cli_substring_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corpus = root / "text"
+            make_text(corpus / "ccs" / "2013" / "a.txt", "The value appears in the wildcard table.")
+            db_path = root / "paper_vocab.sqlite"
+            build_vocab_db(db_path=db_path, corpus_dir=corpus)
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                status = run(
+                    [
+                        "lookup-db",
+                        "in the wild",
+                        "--db",
+                        str(db_path),
+                        "--year",
+                        "2013",
+                        "--examples",
+                        "0",
+                        "--substring-search",
+                        "--json",
+                    ]
+                )
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(result["files_matched"], 1)
 
 
 def make_text(path: Path, text: str) -> None:
