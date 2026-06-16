@@ -7,6 +7,23 @@ sentences where it appears.
 Raw text files are the canonical corpus. The CLI can scan those files directly
 or build a SQLite/FTS vocabulary DB for repeated lookups.
 
+## Installation
+
+Install `paper-collect` and `paper-vocab` in editable mode from adjacent local
+checkouts:
+
+```bash
+python3 -m pip install -e ../paper-collect
+python3 -m pip install -e .
+```
+
+After installation, use the console commands directly:
+
+```bash
+paper-collect --help
+paper-vocab --help
+```
+
 ## Corpus Layout
 
 ```text
@@ -20,11 +37,6 @@ data/corpus/text/
 ```
 
 The text files can be produced by `paper-collect`:
-
-```bash
-python3 -m pip install -e ../paper-collect
-python3 -m pip install -e .
-```
 
 `paper-collect` exports a console command through its `pyproject.toml`:
 
